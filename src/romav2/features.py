@@ -101,10 +101,11 @@ class Descriptor:
                 normalizer = imagenet
                 # TODO: this will break in distributed if not available locally
                 dinov3_vitl16: nn.Module = torch.hub.load(
-                    repo_or_dir="facebookresearch/dinov3",
+                    repo_or_dir="facebookresearch/dinov3:adc254450203739c8149213a7a69d8d905b4fcfa",
                     model="dinov3_vitl16",
                     pretrained=cfg.weights_path is not None,
                     weights=cfg.weights_path,
+                    skip_validation=True,
                 ).to(device)
                 layers = _get_layers(cfg.layer_idx, dinov3_vitl16)
                 return partial_wrap(
