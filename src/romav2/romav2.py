@@ -1,4 +1,5 @@
 from __future__ import annotations
+from unicodedata import bidirectional
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +30,44 @@ from romav2.types import Setting, ImageLike
 logger = logging.getLogger(__name__)
 
 
+def _interpolate_warp_and_confidence(
+    *,
+    warp: torch.Tensor,
+    confidence: torch.Tensor,
+    H: int,
+    W: int,
+    patch_size: int,
+    zero_out_precision: bool,
+):
+    warp = bhwc_interpolate(
+        warp.detach(),
+        size=(H // patch_size, W // patch_size),
+        mode="bilinear",
+        align_corners=False,
+    )
+    if zero_out_precision:
+        # delta at 4 is absolute, and if we
+        # for the second pass we therefore can't use first pred.
+        # overlap is fine since it's relative to matcher pred.
+        confidence[..., 1:] = 0.0
+
+    confidence = bhwc_interpolate(
+        confidence.detach(),
+        size=(H // patch_size, W // patch_size),
+        mode="bilinear",
+        align_corners=False,
+    )
+    return warp, confidence
+
+
+def _map_confidence(*, confidence: torch.Tensor, threshold: float | None):
+    overlap = confidence[..., :1].sigmoid()
+    if threshold is not None:
+        overlap[overlap > threshold] = 1.0
+    precision = prec_mat_from_prec_params(confidence[..., 1:4])
+    return overlap, precision
+
+
 class RoMaV2(nn.Module):
     @dataclass(frozen=True)
     class Cfg:
@@ -39,6 +78,7 @@ class RoMaV2(nn.Module):
         anchor_width: int = 512
         anchor_height: int = 512
         setting: Setting = "precise"
+        compile: bool = True
         name: str = "RoMa v2"
 
     # settings
@@ -73,6 +113,10 @@ class RoMaV2(nn.Module):
         self.name = cfg.name
         if weights is not None:
             self.load_state_dict(weights)
+        if cfg.compile:
+            logger.info(f"Compiling {self.name}...")
+            self.compile()
+        logger.info(f"{self.name} initialized.")
 
     def apply_setting(self, setting: Setting):
         if setting in ["mega1500", "scannet1500", "wxbs", "satast"]:
@@ -136,10 +180,23 @@ class RoMaV2(nn.Module):
         f_A = self.f(img_A_lr)
         f_B = self.f(img_B_lr)
         # match feats
-        matcher_output = self.matcher(f_A, f_B, img_A=img_A_lr, img_B=img_B_lr)
+        matcher_output = self.matcher(
+            f_A, f_B, img_A=img_A_lr, img_B=img_B_lr, bidirectional=self.bidirectional
+        )
         # return matcher_output
         predictions["matcher"] = matcher_output
-        warp, confidence = matcher_output["warp"], matcher_output["confidence"]
+        warp_AB, confidence_AB = (
+            matcher_output["warp_AB"],
+            matcher_output["confidence_AB"],
+        )
+        if self.bidirectional:
+            warp_BA, confidence_BA = (
+                matcher_output["warp_BA"],
+                matcher_output["confidence_BA"],
+            )
+        else:
+            warp_BA = None
+            confidence_BA = None
         # refine warp, maybe twice (if hr is available)
         for stage, (img_A, img_B) in enumerate(
             zip([img_A_lr, img_A_hr], [img_B_lr, img_B_hr])
@@ -154,37 +211,65 @@ class RoMaV2(nn.Module):
             refiner_features_B = self.refiner_features(img_B)
             for patch_size_str, refiner in self.refiners.items():
                 patch_size = int(patch_size_str)
-                warp = bhwc_interpolate(
-                    warp.detach(),
-                    size=(H // patch_size, W // patch_size),
-                    mode="bilinear",
-                    align_corners=False,
+                zero_out_precision = (
+                    img_A_hr is not None and patch_size == 4 and stage == 1
                 )
-                if img_A_hr is not None and patch_size == 4 and stage == 1:
-                    # delta at 4 is absolute, and if we
-                    # for the second pass we therefore can't use first pred.
-                    # overlap is fine since it's relative to matcher pred.
-                    confidence[..., 1:] = 0.0
-                confidence = bhwc_interpolate(
-                    confidence.detach(),
-                    size=(H // patch_size, W // patch_size),
-                    mode="bilinear",
-                    align_corners=False,
+                warp_AB, confidence_AB = _interpolate_warp_and_confidence(
+                    warp=warp_AB,
+                    confidence=confidence_AB,
+                    H=H,
+                    W=W,
+                    patch_size=patch_size,
+                    zero_out_precision=zero_out_precision,
                 )
+                if self.bidirectional:
+                    warp_BA, confidence_BA = _interpolate_warp_and_confidence(
+                        warp=warp_BA,
+                        confidence=confidence_BA,
+                        H=H,
+                        W=W,
+                        patch_size=patch_size,
+                        zero_out_precision=zero_out_precision,
+                    )
 
                 f_patch_A = refiner_features_A[patch_size]
                 f_patch_B = refiner_features_B[patch_size]
-                refiner_output = refiner(
+                refiner_output_AB = refiner(
                     f_A=f_patch_A,
                     f_B=f_patch_B,
-                    prev_warp=warp,
-                    prev_confidence=confidence,
+                    prev_warp=warp_AB,
+                    prev_confidence=confidence_AB,
                     scale_factor=scale_factor,
                 )
-                predictions[f"refiner_{patch_size}"] = refiner_output
-                warp, confidence = refiner_output["warp"], refiner_output["confidence"]
-            predictions["warp"] = warp
-            predictions["confidence"] = confidence
+                if self.bidirectional:
+                    refiner_output_BA = refiner(
+                        f_A=f_patch_B,
+                        f_B=f_patch_A,
+                        prev_warp=warp_BA,
+                        prev_confidence=confidence_BA,
+                        scale_factor=scale_factor,
+                    )
+                else:
+                    refiner_output_BA = None
+                predictions[f"refiner_{patch_size}_AB"] = refiner_output_AB
+                predictions[f"refiner_{patch_size}_BA"] = refiner_output_BA
+                warp_AB, confidence_AB = (
+                    refiner_output_AB["warp"],
+                    refiner_output_AB["confidence"],
+                )
+                if self.bidirectional:
+                    warp_BA, confidence_BA = (
+                        refiner_output_BA["warp"],
+                        refiner_output_BA["confidence"],
+                    )
+            predictions["warp_AB"] = warp_AB
+            predictions["confidence_AB"] = confidence_AB
+            if self.bidirectional:
+                predictions["warp_BA"] = warp_BA
+                predictions["confidence_BA"] = confidence_BA
+            else:
+                predictions["warp_BA"] = None
+                predictions["confidence_BA"] = None
         return predictions
 
     def _load_image(self, img_like: ImageLike) -> torch.Tensor:
@@ -214,24 +299,11 @@ class RoMaV2(nn.Module):
             img = img[None]
         return img
 
-    def _maybe_return_intermediate(
-        self, preds: dict[str, torch.Tensor], return_intermediate: str | None
-    ):
-        if return_intermediate is None:
-            return preds["warp"], preds["confidence"]
-        elif return_intermediate == "matcher":
-            return preds["matcher"]["warp"], preds["matcher"]["confidence"]
-        else:
-            raise ValueError(
-                f"Invalid return_intermediate value: {return_intermediate=}. Valid values are None, 'matcher'."
-            )
-
     @torch.inference_mode()
     def match(
         self,
         img_like_A: ImageLike,
         img_like_B: ImageLike,
-        return_intermediate: str | None = None,
     ) -> dict[str, torch.Tensor]:
         self.eval()
         img_A = self._load_image(img_like_A)
@@ -270,108 +342,93 @@ class RoMaV2(nn.Module):
             img_A_hr = None
             img_B_hr = None
 
-        preds = self.forward(img_A_lr, img_B_lr, img_A_hr=img_A_hr, img_B_hr=img_B_hr)
-        assert isinstance(preds["warp"], torch.Tensor) and isinstance(
-            preds["confidence"], torch.Tensor
+        preds = self(img_A_lr, img_B_lr, img_A_hr=img_A_hr, img_B_hr=img_B_hr)
+        
+        warp_AB = preds["warp_AB"]
+        confidence_AB = preds["confidence_AB"]
+        warp_BA = preds["warp_BA"]
+        confidence_BA = preds["confidence_BA"]
+        overlap_AB, precision_AB = _map_confidence(
+            confidence=confidence_AB, threshold=self.threshold
         )
-
-        warp, conf = self._maybe_return_intermediate(preds, return_intermediate)
-        overlap = conf[..., :1].sigmoid()
-        if self.threshold is not None:
-            overlap[overlap > self.threshold] = 1.0
-        if conf.shape[-1] > 1:
-            precision = prec_mat_from_prec_params(conf[..., 1:4])
+        if self.bidirectional:
+            overlap_BA, precision_BA = _map_confidence(
+                confidence=confidence_BA, threshold=self.threshold
+            )
         else:
-            precision = None
+            overlap_BA = None
+            precision_BA = None
 
-        if self.bidirectional:
-            preds_BA = self.forward(
-                img_B_lr, img_A_lr, img_B_hr=img_A_hr, img_A_hr=img_B_hr
-            )
-
-            warp_BA, conf_BA = self._maybe_return_intermediate(
-                preds_BA, return_intermediate
-            )
-            overlap_BA = conf_BA[..., :1].sigmoid()
-            if self.threshold is not None:
-                overlap_BA[overlap_BA > self.threshold] = 1.0
-            if conf_BA.shape[-1] > 1:
-                precision_BA = prec_mat_from_prec_params(conf_BA[..., 1:4])
-            else:
-                precision_BA = None
-
-        assert isinstance(warp, torch.Tensor) and isinstance(conf, torch.Tensor)
         preds = {
-            "warp_AtoB": warp.clone(),
-            "overlap_AtoB": overlap.clone(),
-            "precision_AtoB": precision.clone() if precision is not None else None,
+            "warp_AB": warp_AB.clone(),
+            "confidence_AB": confidence_AB.clone(),
+            "overlap_AB": overlap_AB.clone(),
+            "precision_AB": precision_AB.clone(),
+            "warp_BA": warp_BA.clone() if warp_BA is not None else None,
+            "confidence_BA": confidence_BA.clone() if confidence_BA is not None else None,
+            "overlap_BA": overlap_BA.clone() if overlap_BA is not None else None,
+            "precision_BA": precision_BA.clone() if precision_BA is not None else None,
         }
-        if self.bidirectional:
-            preds["warp_BtoA"] = warp_BA.clone()
-            preds["overlap_BtoA"] = overlap_BA.clone()
-            preds["precision_BtoA"] = (
-                precision_BA.clone() if precision_BA is not None else None
-            )
         return preds
 
     def sample(self, preds: dict[str, torch.Tensor], num_corresp: int):
-        warp = preds["warp_AtoB"]
-        confidence_AtoB = preds["overlap_AtoB"]
-        precision_AtoB = preds["precision_AtoB"] if "precision_AtoB" in preds else None
+        warp = preds["warp_AB"]
+        confidence_AB = preds["overlap_AB"]
+        precision_AB = preds["precision_AB"] if "precision_AB" in preds else None
 
         warp = warp[0]
-        confidence_AtoB = confidence_AtoB[0].reshape(-1)
-        if precision_AtoB is not None:
-            precision_AtoB = precision_AtoB[0]
+        confidence_AB = confidence_AB[0].reshape(-1)
+        if precision_AB is not None:
+            precision_AB = precision_AB[0]
 
         H_A, W_A, two = warp.shape
         grid = get_normalized_grid(1, H_A, W_A)[0]
-        matches_AtoB = torch.cat((grid, warp), dim=-1).reshape(-1, 4)
+        matches_AB = torch.cat((grid, warp), dim=-1).reshape(-1, 4)
         if self.bidirectional:
-            confidence_BtoA = preds["overlap_BtoA"]
-            warp_BtoA = preds["warp_BtoA"]
+            confidence_BA = preds["overlap_BA"]
+            warp_BA = preds["warp_BA"]
 
-            precision_BtoA = (
-                preds["precision_BtoA"] if "precision_BtoA" in preds else None
+            precision_BA = (
+                preds["precision_BA"] if "precision_BA" in preds else None
             )
-            warp_BtoA = warp_BtoA[0]
-            confidence_BtoA = confidence_BtoA[0]
-            if precision_BtoA is not None:
-                precision_BtoA = precision_BtoA[0]
+            warp_BA = warp_BA[0]
+            confidence_BA = confidence_BA[0]
+            if precision_BA is not None:
+                precision_BA = precision_BA[0]
 
-            if precision_BtoA is not None and precision_AtoB is not None:
+            if precision_BA is not None and precision_AB is not None:
                 precision_A = bhwc_grid_sample(
-                    precision_BtoA[None].reshape(1, H_A, W_A, -1),
+                    precision_BA[None].reshape(1, H_A, W_A, -1),
                     warp[None],
                     mode="bilinear",
                     align_corners=False,
                 ).reshape(H_A, W_A, 2, 2)
                 precision_B = bhwc_grid_sample(
-                    precision_AtoB[None].reshape(1, H_A, W_A, -1),
-                    warp_BtoA[None],
+                    precision_AB[None].reshape(1, H_A, W_A, -1),
+                    warp_BA[None],
                     mode="bilinear",
                     align_corners=False,
                 ).reshape(H_A, W_A, 2, 2)
                 precision_fwd = torch.stack(
-                    (precision_A, precision_AtoB), dim=-3
+                    (precision_A, precision_AB), dim=-3
                 ).reshape(-1, 2, 2, 2)
                 precision_bwd = torch.stack(
-                    (precision_BtoA, precision_B), dim=-3
+                    (precision_BA, precision_B), dim=-3
                 ).reshape(-1, 2, 2, 2)
                 precision = torch.cat((precision_fwd, precision_bwd), dim=0)
             else:
                 precision = None
             # let's hope H_A is equal to H_B
             grid = get_normalized_grid(1, H_A, W_A)[0]
-            matches_BtoA = torch.cat((warp_BtoA, grid), dim=-1).reshape(-1, 4)
+            matches_BA = torch.cat((warp_BA, grid), dim=-1).reshape(-1, 4)
             confidence = torch.cat(
-                (confidence_AtoB.reshape(-1), confidence_BtoA.reshape(-1)), dim=0
+                (confidence_AB.reshape(-1), confidence_BA.reshape(-1)), dim=0
             )
-            matches = torch.cat((matches_AtoB, matches_BtoA), dim=0)
+            matches = torch.cat((matches_AB, matches_BA), dim=0)
         else:
-            matches = matches_AtoB
-            confidence = confidence_AtoB.reshape(-1)
-            precision = precision_AtoB.reshape(-1, 2, 2)
+            matches = matches_AB
+            confidence = confidence_AB.reshape(-1)
+            precision = precision_AB.reshape(-1, 2, 2)
 
         expansion_factor = 4
         confidence = confidence * matches.abs().amax(dim=-1).le(1 - 1 / H_A).float()
@@ -422,6 +479,7 @@ class RoMaV2(nn.Module):
         return to_pixel(warp[..., :2], H=H_A, W=W_A), to_pixel(
             warp[..., 2:], H=H_B, W=W_B
         )
+
     @classmethod
     def match_keypoints(
         cls,

@@ -27,28 +27,27 @@ if __name__ == "__main__":
 
     model = RoMaV2()
     model.apply_setting("precise")
-    model.bidirectional = True 
     H, W = (model.H_lr, model.W_lr) if (model.H_hr is None or model.W_hr is None) else (model.H_hr, model.W_hr) 
     im1 = Image.open(im1_path).resize((W, H))
     im2 = Image.open(im2_path).resize((W, H))
 
     # Match
     preds = model.match(im1_path, im2_path)
-    warp_AtoB, overlap_AtoB = preds["warp_AtoB"][0], preds["overlap_AtoB"][0]
-    warp_BtoA, overlap_BtoA = preds["warp_BtoA"][0], preds["overlap_BtoA"][0]
+    warp_AB, overlap_AB = preds["warp_AB"][0], preds["overlap_AB"][0]
+    warp_BA, overlap_BA = preds["warp_BA"][0], preds["overlap_BA"][0]
     # Sampling not needed, but can be done with model.sample(warp, certainty)
 
     x1 = (torch.tensor(np.array(im1)) / 255).to(device).permute(2, 0, 1)
     x2 = (torch.tensor(np.array(im2)) / 255).to(device).permute(2, 0, 1)
 
     im2_transfer_rgb = F.grid_sample(
-        x2[None], warp_AtoB[None], mode="bilinear", align_corners=False
+        x2[None], warp_AB[None], mode="bilinear", align_corners=False
     )[0]
     im1_transfer_rgb = F.grid_sample(
-        x1[None], warp_BtoA[None], mode="bilinear", align_corners=False
+        x1[None], warp_BA[None], mode="bilinear", align_corners=False
     )[0]
     warp_im = torch.cat((im2_transfer_rgb, im1_transfer_rgb), dim=2)
-    overlap = torch.cat((overlap_AtoB, overlap_BtoA), dim=1)[..., 0]
+    overlap = torch.cat((overlap_AB, overlap_BA), dim=1)[..., 0]
     white_im = torch.ones((H, 2 * W), device=device)
     vis_im = overlap * warp_im + (1 - overlap) * white_im
     if not Path(save_path).exists():

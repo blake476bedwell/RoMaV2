@@ -18,7 +18,7 @@ class Batch:
     K_B: torch.Tensor
     pose_A: torch.Tensor
     pose_B: torch.Tensor
-    T_AtoB: torch.Tensor
+    T_AB: torch.Tensor
     img_A_path: Path
     img_B_path: Path
     source: GTSource | list[GTSource]
@@ -39,7 +39,7 @@ class Batch:
             depth_B=self.depth_B.to(device),
             warp_A_to_B=self.warp_A_to_B.to(device),
             warp_B_to_A=self.warp_B_to_A.to(device),
-            T_AtoB=self.T_AtoB.to(device),
+            T_AB=self.T_AB.to(device),
             img_A_path=self.img_A_path,
             img_B_path=self.img_B_path,
             source=self.source,

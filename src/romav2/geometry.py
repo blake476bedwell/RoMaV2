@@ -61,7 +61,7 @@ def warp_and_overlap_from_depth(
     depth_B: torch.Tensor,
     K_A: torch.Tensor,
     K_B: torch.Tensor,
-    T_AtoB: torch.Tensor,
+    T_AB: torch.Tensor,
     rel_depth_error_threshold: float | None,
     mode: ConfidenceMode,
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -77,17 +77,17 @@ def warp_and_overlap_from_depth(
     )
     x = x * depth_A
     x = to_homogeneous(x)
-    x = einsum(x, T_AtoB, "batch H W calib, batch world calib -> batch H W world")
-    x_AtoB = from_homogeneous(x)
-    x = einsum(x_AtoB, K_B, "batch H W world, batch pixel world -> batch H W pixel")
+    x = einsum(x, T_AB, "batch H W calib, batch world calib -> batch H W world")
+    x_AB = from_homogeneous(x)
+    x = einsum(x_AB, K_B, "batch H W world, batch pixel world -> batch H W pixel")
     x = from_homogeneous(x)
     warp = to_normalized(x, H=H_B, W=W_B)
-    z_AtoB = x_AtoB[..., -1:]
+    z_AB = x_AB[..., -1:]
     pos_and_finite_depth = (
-        (z_AtoB > 0.0).logical_and(z_AtoB.isfinite()).logical_and(~depth_B.isnan())
+        (z_AB > 0.0).logical_and(z_AB.isfinite()).logical_and(~depth_B.isnan())
     )
     z_B = bhwc_grid_sample(depth_B, warp, mode="bilinear", align_corners=False)
-    rel_depth_error = (z_B - z_AtoB) / z_B
+    rel_depth_error = (z_B - z_AB) / z_B
     pos_depth_and_within_frame = (pos_and_finite_depth).logical_and(
         warp.abs().amax(dim=-1, keepdim=True) < 1.0
     )

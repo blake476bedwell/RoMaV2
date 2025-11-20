@@ -21,6 +21,49 @@ def cosine_similarity(f_A: torch.Tensor, f_B: torch.Tensor) -> torch.Tensor:
     return res
 
 
+def _compute_match_embeddings(
+    *,
+    f_A: torch.Tensor,
+    f_B: torch.Tensor,
+    pos_emb_grid: torch.Tensor,
+    temp: float,
+    B: int,
+    H_A: int,
+    W_A: int,
+    H_B: int,
+    W_B: int,
+) -> torch.Tensor:
+    attn_AB_logits = (1 / temp * cosine_similarity(f_A, f_B)).reshape(
+        B, H_A * W_A, H_B * W_B
+    )
+    attn_AB = torch.softmax(attn_AB_logits, dim=2)
+    attn_AB = attn_AB.reshape(B, H_A, W_A, H_B, W_B)
+
+    match_emb = einsum(
+        attn_AB, pos_emb_grid, "B H_A W_A H_B W_B, B H_B W_B D -> B H_A W_A D"
+    )
+    attn_AB_logits = attn_AB_logits.reshape(B, H_A, W_A, H_B, W_B)
+    return attn_AB_logits, attn_AB, match_emb
+
+
+def _compute_head_preds(
+    *,
+    f_list_A: list[torch.Tensor],
+    match_emb_AB: torch.Tensor,
+    f_mv_A: torch.Tensor,
+    img_A: torch.Tensor,
+    img_B: torch.Tensor,
+    head: DPTHead,
+) -> torch.Tensor:
+    head_input = f_list_A
+    head_input[-1] = f_list_A[-1] + f_mv_A + match_emb_AB
+    warp_and_confidence = head(head_input, img_A=img_A, img_B=img_B)
+    B, H_out, W_out, D_warp_and_confidence = warp_and_confidence.shape
+    warp = warp_and_confidence[:, :, :, :2]
+    confidence = warp_and_confidence[:, :, :, 2:]
+    return warp, confidence
+
+
 class Matcher(nn.Module):
     @dataclass(frozen=True)
     class Cfg:
@@ -77,6 +120,7 @@ class Matcher(nn.Module):
         f_list_B: list[torch.Tensor],
         img_A: torch.Tensor,
         img_B: torch.Tensor,
+        bidirectional: bool,
     ):
         preds = {}
         f_A = torch.cat(f_list_A, dim=-1)
@@ -91,8 +135,6 @@ class Matcher(nn.Module):
             x.reshape(B, H_B * W_B, 2), self.scale * self.omega
         ).reshape(B, H_B, W_B, -1)
         pos_emb_grid = torch.cat((x_emb.sin(), x_emb.cos()), dim=-1)
-        if self.cfg.style == "ufm":
-            f_B = f_B + pos_emb_grid
 
         with torch.autocast(device.type, torch.bfloat16, enabled=self.cfg.enable_amp):
             assert self.mv_vit is not None
@@ -104,33 +146,62 @@ class Matcher(nn.Module):
 
         f_mv_A = f_mv_A.float()
         f_mv_B = f_mv_B.float()
+
         assert H_A == H_B and W_A == W_B, "H_A and W_A must be equal to H_B and W_B"
-
-        attn_AB_logits = (1 / self.temp * cosine_similarity(f_mv_A, f_mv_B)).reshape(
-            B, H_A * W_A, H_B * W_B
+        attn_AB_logits, attn_AB, match_emb_AB = _compute_match_embeddings(
+            f_A=f_mv_A,
+            f_B=f_mv_B,
+            pos_emb_grid=pos_emb_grid,
+            temp=self.temp,
+            B=B,
+            H_A=H_A,
+            W_A=W_A,
+            H_B=H_B,
+            W_B=W_B,
         )
-        attn_AB = torch.softmax(attn_AB_logits, dim=2)
-        attn_AB = attn_AB.reshape(B, H_A, W_A, H_B, W_B)
-
-        match_emb = einsum(
-            attn_AB, pos_emb_grid, "B H_A W_A H_B W_B, B H_B W_B D -> B H_A W_A D"
+        warp_AB, confidence_AB = _compute_head_preds(
+            f_list_A=f_list_A,
+            match_emb_AB=match_emb_AB,
+            f_mv_A=f_mv_A,
+            img_A=img_A,
+            img_B=img_B,
+            head=self.head,
         )
-        head_input = f_list_A
-        if self.cfg.style == "ufm":
-            head_input = f_list_A[-1] + f_mv_A
-        elif self.cfg.style == "romav2":
-            head_input[-1] = f_list_A[-1] + f_mv_A + match_emb
+
+        if bidirectional:
+            attn_BA_logits, attn_BA, match_emb_BA = _compute_match_embeddings(
+                f_A=f_mv_B,
+                f_B=f_mv_A,
+                pos_emb_grid=pos_emb_grid,
+                temp=self.temp,
+                B=B,
+                H_A=H_B,
+                W_A=W_B,
+                H_B=H_A,
+                W_B=W_A,
+            )
+            warp_BA, confidence_BA = _compute_head_preds(
+                f_list_A=f_list_B,
+                match_emb_AB=match_emb_BA,
+                f_mv_A=f_mv_B,
+                img_A=img_B,
+                img_B=img_A,
+                head=self.head,
+            )
         else:
-            raise TypeError(f"Unknown style: {self.cfg.style}")
+            match_emb_BA = None
+            attn_BA = None
+            attn_BA_logits = None
+            warp_BA = None
+            confidence_BA = None
 
-        warp_and_confidence = self.head(head_input, img_A=img_A, img_B=img_B)
-        B, H_out, W_out, D_warp_and_confidence = warp_and_confidence.shape
-        assert D_warp_and_confidence == self.cfg.warp_dim + self.cfg.confidence_dim
-        warp = warp_and_confidence[:, :, :, :2]
-        confidence = warp_and_confidence[:, :, :, 2:]
-
-        preds["attn_AB_logits"] = attn_AB_logits.reshape(B, H_A, W_A, H_B, W_B)
+        preds["attn_AB_logits"] = attn_AB_logits
         preds["attn_AB"] = attn_AB
-        preds["warp"] = warp
-        preds["confidence"] = confidence
+        preds["warp_AB"] = warp_AB
+        preds["confidence_AB"] = confidence_AB
+
+        preds["attn_BA_logits"] = attn_BA_logits
+        preds["attn_BA"] = attn_BA
+        preds["warp_BA"] = warp_BA
+        preds["confidence_BA"] = confidence_BA
         return preds

@@ -158,7 +158,7 @@ class ConvRefiner(nn.Module):
             B, H_B, W_B, self.cfg.proj_dim
         )
         with torch.no_grad():
-            f_BtoA = bhwc_grid_sample(
+            f_BA = bhwc_grid_sample(
                 f_B, prev_warp, mode=self.cfg.grid_sample_mode, align_corners=False
             )
         im_A_coords = get_normalized_grid(B, H_A, W_A)
@@ -169,7 +169,7 @@ class ConvRefiner(nn.Module):
         )
         # Corr in other means take a kxk grid around the predicted coordinate in other image
         f_A_bdhw = f_A.permute(0, 3, 1, 2)
-        f_B_bdhw = f_BtoA.permute(0, 3, 1, 2)
+        f_B_bdhw = f_BA.permute(0, 3, 1, 2)
         d = torch.cat((f_A_bdhw, f_B_bdhw, emb_in_displacement), dim=1)
         if self.cfg.local_corr_radius is not None:
             local_corr = local_correlation(

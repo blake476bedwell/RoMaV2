@@ -10,7 +10,6 @@ import numpy as np
 def test_fps():
     model = RoMaV2()
     model.apply_setting("base")
-    model.compile()
     B = 8
     T = 50
     img_A = (

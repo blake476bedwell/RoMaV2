@@ -38,8 +38,6 @@ from romav2 import RoMaV2
 
 # load pretrained model
 model = RoMaV2()
-# for faster matches compile
-model.compile()
 # Match densely for any image-like pair of inputs
 preds = model.match(img_A_path, img_B_path)
 
@@ -47,7 +45,7 @@ preds = model.match(img_A_path, img_B_path)
 # preds = model(img_A, img_B)
 
 # Sample 5000 matches for estimation
-matches, overlaps, precision_AtoB, precision_BtoA = model.sample(preds, 5000)
+matches, overlaps, precision_AB, precision_BA = model.sample(preds, 5000)
 
 # Convert to pixel coordinates (RoMaV2 produces matches in [-1,1]x[-1,1])
 kptsA, kptsB = model.to_pixel_coordinates(matches, H_A, W_A, H_B, W_B)

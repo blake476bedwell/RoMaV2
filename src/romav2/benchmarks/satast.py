@@ -396,7 +396,7 @@ class SatAst:
 
                 # 2. Run the matcher model
                 preds = model.match(im_A_path, im_B_path)
-                warp = preds["warp_AtoB"]
+                warp = preds["warp_AB"]
 
                 # 3. Get Ground Truth Correspondences (Pixel)
                 last_iteration_corrs = json_data["correspondences"][-1]

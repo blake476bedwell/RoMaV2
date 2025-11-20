@@ -32,18 +32,18 @@ if __name__ == "__main__":
 
     # Match
     preds = model.match(im1_path, im2_path)
-    warp_AtoB, overlap_AtoB = preds["warp_AtoB"][0], preds["overlap_AtoB"][0]
-    warp_BtoA, overlap_BtoA = preds["warp_BtoA"][0], preds["overlap_BtoA"][0]
-    precision_AtoB, precision_BtoA = (
-        preds["precision_AtoB"][0],
-        preds["precision_BtoA"][0],
+    warp_AB, overlap_AB = preds["warp_AB"][0], preds["overlap_AB"][0]
+    warp_BA, overlap_BA = preds["warp_BA"][0], preds["overlap_BA"][0]
+    precision_AB, precision_BA = (
+        preds["precision_AB"][0],
+        preds["precision_BA"][0],
     )
 
-    std_AtoB = torch.linalg.det(precision_AtoB) ** (-1 / 4)
-    std_BtoA = torch.linalg.det(precision_BtoA) ** (-1 / 4)
+    std_AB = torch.linalg.det(precision_AB) ** (-1 / 4)
+    std_BA = torch.linalg.det(precision_BA) ** (-1 / 4)
 
-    std_im = torch.cat((std_AtoB, std_BtoA), dim=1)
-    overlap = torch.cat((overlap_AtoB, overlap_BtoA), dim=1)[..., 0]
+    std_im = torch.cat((std_AB, std_BA), dim=1)
+    overlap = torch.cat((overlap_AB, overlap_BA), dim=1)[..., 0]
     white_im = torch.ones((H, 2 * W), device=device)
     std_im = (std_im / args.std_max).clamp(0, 1)
     vis_im = overlap * std_im + (1 - overlap) * white_im

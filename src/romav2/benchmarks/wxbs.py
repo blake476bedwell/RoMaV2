@@ -59,40 +59,40 @@ class WxBSBenchmark:
                 )  # type: ignore
                 warp_bidirectional = preds[0]
                 W_pred = warp_bidirectional.shape[2]
-                warp_AtoB = warp_bidirectional[:, :, : W_pred // 2, 2:]
-                warp_BtoA = warp_bidirectional[:, :, W_pred // 2 :, :2]
-                overlap_AtoB = preds[1][:, :, : W_pred // 2]
-                overlap_BtoA = preds[1][:, :, W_pred // 2 :]
+                warp_AB = warp_bidirectional[:, :, : W_pred // 2, 2:]
+                warp_BA = warp_bidirectional[:, :, W_pred // 2 :, :2]
+                overlap_AB = preds[1][:, :, : W_pred // 2]
+                overlap_BA = preds[1][:, :, W_pred // 2 :]
             else:
                 preds = model.match(pair_dict["img1"], pair_dict["img2"])
-                warp_AtoB = preds["warp_AtoB"]
-                warp_BtoA = preds["warp_BtoA"]
-                overlap_AtoB = preds["overlap_AtoB"]
-                overlap_BtoA = preds["overlap_BtoA"]
+                warp_AB = preds["warp_AB"]
+                warp_BA = preds["warp_BA"]
+                overlap_AB = preds["overlap_AB"]
+                overlap_BA = preds["overlap_BA"]
             n_est_points_right = bhwc_grid_sample(
-                warp_AtoB,
+                warp_AB,
                 n_points_left[None, None],
                 mode="bilinear",
                 align_corners=False,
             )
             n_est_points_left = bhwc_grid_sample(
-                warp_BtoA,
+                warp_BA,
                 n_points_right[None, None],
                 mode="bilinear",
                 align_corners=False,
             )
             est_points_right = to_pixel(n_est_points_right, H=H_B, W=W_B)
             est_points_left = to_pixel(n_est_points_left, H=H_A, W=W_A)
-            # model.to_pixel_coordinates(preds["warp_AtoB"], H_A, W_A, H_B, W_B)
+            # model.to_pixel_coordinates(preds["warp_AB"], H_A, W_A, H_B, W_B)
             vis_im_path = Path(f"vis/wxbs_{model.name}_{pair_dict['name']}.jpg")
             if not vis_im_path.exists():
                 vis_im = vis(
                     pair_dict["img1"],
                     pair_dict["img2"],
-                    warp_AtoB,
-                    warp_BtoA,
-                    overlap_AtoB,
-                    overlap_BtoA,
+                    warp_AB,
+                    warp_BA,
+                    overlap_AB,
+                    overlap_BA,
                 )
                 vis_im_path.parent.mkdir(parents=True, exist_ok=True)
                 tensor_to_pil(vis_im).save(vis_im_path)
