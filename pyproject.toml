@@ -1,7 +1,7 @@
 [project]
 name = "romav2"
 version = "2.0.0"
-description = "A very good dense feature matcher."
+description = "RoMa v2: Harder Better Faster Denser Feature Matching"
 readme = "README.md"
 authors = [
     { name = "Johan Edstedt", email = "johan.edstedt@liu.se" }
