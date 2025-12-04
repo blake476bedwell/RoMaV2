@@ -94,11 +94,10 @@ class RoMaV2(nn.Module):
         if cfg is None:
             # default
             cfg = RoMaV2.Cfg()
-            weights = torch.hub.load_state_dict_from_url(
-                "https://github.com/Parskatt/RoMaV2/releases/download/weights/romav2.pt"
-            )
-        else:
-            weights = None
+            
+        weights = torch.hub.load_state_dict_from_url(
+            "https://github.com/Parskatt/RoMaV2/releases/download/weights/romav2.pt"
+        )
         self.f = Descriptor(cfg.descriptor)
         self.matcher = Matcher(cfg.matcher)
         self.cfg = cfg
@@ -110,8 +109,7 @@ class RoMaV2(nn.Module):
         self.eval()
         self.apply_setting(cfg.setting)
         self.name = cfg.name
-        if weights is not None:
-            self.load_state_dict(weights)
+        self.load_state_dict(weights)
         if cfg.compile:
             logger.info(f"Compiling {self.name}...")
             self.compile()
